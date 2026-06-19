@@ -82,6 +82,10 @@ enabled = true
 policy = "oneshot"
 inspector_port = 8083
 
+[functions]
+# Shared import map for all Edge Functions
+import_map = "./functions/deno.json"
+
 [analytics]
 enabled = false
 port = 54327
