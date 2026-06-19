@@ -37,6 +37,15 @@ function parseVector(v: string | number[]): number[] {
   return JSON.parse(v as string) as number[];
 }
 
+/**
+ * Format a number array as the text representation pgvector expects.
+ * PostgREST passes JSON strings through PostgreSQL's text→vector implicit cast,
+ * which is more reliable than passing a raw JSON array.
+ */
+function formatVector(v: number[]): string {
+  return `[${v.join(',')}]`;
+}
+
 function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0, normA = 0, normB = 0;
   for (let i = 0; i < a.length; i++) {
@@ -132,7 +141,7 @@ Deno.serve(async (req: Request) => {
         const { error: upErr } = await supabase
           .from('clusters')
           .update({
-            centroid: newCentroid,
+            centroid: formatVector(newCentroid),
             member_count: newMemberCount,
             is_dirty: true,
             updated_at: new Date().toISOString(),
@@ -148,7 +157,7 @@ Deno.serve(async (req: Request) => {
           .from('clusters')
           .insert({
             poll_id,
-            centroid: embedding,
+            centroid: formatVector(embedding),
             member_count: 1,
             is_dirty: true,
           })
@@ -162,7 +171,7 @@ Deno.serve(async (req: Request) => {
       // 5. Persist the response
       const { data: response, error: respErr } = await supabase
         .from('responses')
-        .insert({ poll_id, kind, text, embedding, cluster_id })
+        .insert({ poll_id, kind, text, embedding: formatVector(embedding), cluster_id })
         .select()
         .single();
       if (respErr) throw respErr;

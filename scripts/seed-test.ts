@@ -108,16 +108,14 @@ const { id: poll_id, pin } = createResult.poll;
 console.log(`    ✅  Created poll  id=${poll_id}  pin=${pin}`);
 console.log('');
 
-// 2. Submit all 20 responses (sequential to avoid race conditions on cluster table)
+// 2. Submit all 20 responses (sequential to avoid cluster table race conditions)
 console.log('2️⃣   Submitting 20 open-ended responses …');
+const enc = new TextEncoder();
 let submitted = 0;
 for (const text of TEST_RESPONSES) {
   await callFunction('submit-response', { poll_id, kind: 'open', text });
   submitted++;
-  process.stdout?.write?.(`\r    ${submitted} / ${TEST_RESPONSES.length}`);
-  Deno.stdout.writeSync(
-    new TextEncoder().encode(`\r    ${submitted} / ${TEST_RESPONSES.length}`),
-  );
+  Deno.stdout.writeSync(enc.encode(`\r    ${submitted} / ${TEST_RESPONSES.length}`));
 }
 console.log('\n    ✅  All responses submitted');
 console.log('');
