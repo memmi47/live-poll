@@ -1,0 +1,10 @@
+.env
+.env.local
+.env.*.local
+
+# Supabase local volumes (created by `supabase start`)
+supabase/.branches
+supabase/.temp
+
+node_modules/
+.DS_Store
