@@ -25,11 +25,8 @@ create table clusters (
   updated_at   timestamptz default now()
 );
 
--- NOTE: nearest-cluster matching is done in the Edge Function (JS cosine over
--- the poll's clusters), so we deliberately do NOT add an ivfflat index here —
--- it would never be used and an untrained ivfflat index can hurt recall.
--- If clustering ever moves into SQL (e.g. an RPC using `centroid <=> query`),
--- add `using ivfflat (centroid vector_cosine_ops) with (lists = N)` then.
+-- ivfflat index added in migration 000003 alongside the assign_or_create_cluster
+-- RPC, which uses `centroid <=> p_embedding` KNN search.
 
 -- ── responses ────────────────────────────────────────────────────────────────
 
