@@ -25,11 +25,11 @@ create table clusters (
   updated_at   timestamptz default now()
 );
 
--- Approximate nearest-neighbour index for centroid lookup
--- Lists = 10 is fine for early stage; raise when total cluster rows > 10 000
-create index clusters_centroid_idx on clusters
-  using ivfflat (centroid vector_cosine_ops)
-  with (lists = 10);
+-- NOTE: nearest-cluster matching is done in the Edge Function (JS cosine over
+-- the poll's clusters), so we deliberately do NOT add an ivfflat index here —
+-- it would never be used and an untrained ivfflat index can hurt recall.
+-- If clustering ever moves into SQL (e.g. an RPC using `centroid <=> query`),
+-- add `using ivfflat (centroid vector_cosine_ops) with (lists = N)` then.
 
 -- ── responses ────────────────────────────────────────────────────────────────
 

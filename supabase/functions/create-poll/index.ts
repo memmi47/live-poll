@@ -39,8 +39,9 @@ Deno.serve(async (req: Request) => {
 
       if (!error) return jsonResponse({ poll: data }, 201);
 
-      // Only retry on duplicate-key violations
-      if (!error.message.includes('duplicate') && !error.message.includes('unique')) {
+      // Only retry on unique-violation (Postgres error code 23505); rethrow
+      // anything else. Matching the code is more robust than the message text.
+      if (error.code !== '23505') {
         throw error;
       }
     }
