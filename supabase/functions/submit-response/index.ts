@@ -5,9 +5,13 @@
 
 import { corsResponse, jsonResponse } from '../_shared/cors.ts';
 import { getServiceClient } from '../_shared/supabase.ts';
-
-// Adjust this threshold to tune cluster granularity (lower → fewer, coarser clusters)
-const SIMILARITY_THRESHOLD = 0.78;
+import {
+  findBestCluster,
+  formatVector,
+  isPowerOfTwo,
+  SIMILARITY_THRESHOLD,
+  updateCentroid,
+} from '../_shared/clustering.ts';
 
 // ── Supabase built-in AI type (gte-small, 384-dim) ──────────────────────────
 declare const Supabase: {
@@ -21,50 +25,12 @@ declare const Supabase: {
   };
 };
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
 async function generateEmbedding(text: string): Promise<number[]> {
   const session = new Supabase.ai.Session('gte-small');
   const raw = await session.run(text, { mean_pool: true, normalize: true });
   // Handle both { data: Float32Array } and plain Float32Array
   const arr = (raw as { data?: Float32Array }).data ?? (raw as Float32Array);
   return Array.from(arr);
-}
-
-/** pgvector returns centroid as a string "[n1,n2,...]" via REST; handle both formats. */
-function parseVector(v: string | number[]): number[] {
-  if (Array.isArray(v)) return v;
-  return JSON.parse(v as string) as number[];
-}
-
-/**
- * Format a number array as the text representation pgvector expects.
- * PostgREST passes JSON strings through PostgreSQL's text→vector implicit cast,
- * which is more reliable than passing a raw JSON array.
- */
-function formatVector(v: number[]): string {
-  return `[${v.join(',')}]`;
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  if (normA === 0 || normB === 0) return 0;
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
-/** Weighted average of existing centroid and the new embedding. */
-function updateCentroid(centroid: number[], embedding: number[], count: number): number[] {
-  const next = count + 1;
-  return centroid.map((v, i) => (v * count + embedding[i]) / next);
-}
-
-function isPowerOfTwo(n: number): boolean {
-  return n >= 1 && (n & (n - 1)) === 0;
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
@@ -113,30 +79,15 @@ Deno.serve(async (req: Request) => {
       if (clErr) throw clErr;
 
       // 3. Find the closest cluster by cosine similarity
-      let bestId: string | null = null;
-      let bestSim = -Infinity;
-      let bestCentroid: number[] = [];
-      let bestCount = 0;
-
-      for (const cl of clusters ?? []) {
-        if (!cl.centroid) continue;
-        const centroid = parseVector(cl.centroid);
-        const sim = cosineSimilarity(centroid, embedding);
-        if (sim > bestSim) {
-          bestSim = sim;
-          bestId = cl.id;
-          bestCentroid = centroid;
-          bestCount = cl.member_count;
-        }
-      }
+      const best = findBestCluster(clusters ?? [], embedding);
 
       let cluster_id: string;
       let newMemberCount: number;
 
-      if (bestId && bestSim >= SIMILARITY_THRESHOLD) {
+      if (best && best.similarity >= SIMILARITY_THRESHOLD) {
         // 4a. Assign to existing cluster; update weighted centroid
-        newMemberCount = bestCount + 1;
-        const newCentroid = updateCentroid(bestCentroid, embedding, bestCount);
+        newMemberCount = best.member_count + 1;
+        const newCentroid = updateCentroid(best.centroid, embedding, best.member_count);
 
         const { error: upErr } = await supabase
           .from('clusters')
@@ -146,10 +97,10 @@ Deno.serve(async (req: Request) => {
             is_dirty: true,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', bestId);
+          .eq('id', best.id);
         if (upErr) throw upErr;
 
-        cluster_id = bestId;
+        cluster_id = best.id;
       } else {
         // 4b. No close match – create a new cluster
         newMemberCount = 1;

@@ -5,37 +5,11 @@
 
 import { corsResponse, jsonResponse } from '../_shared/cors.ts';
 import { getServiceClient } from '../_shared/supabase.ts';
+import { safeParseLabel } from '../_shared/parse.ts';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const LABEL_MODEL = 'meta-llama/llama-3.1-8b-instruct';
 const MAX_SAMPLES = 15;
-
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-/** Strip markdown code-fence markers, then parse JSON. */
-function safeParseJson(raw: string): { label: string; summary: string } | null {
-  const cleaned = raw
-    .replace(/```json\s*/gi, '')
-    .replace(/```\s*/g, '')
-    .trim();
-
-  try {
-    const parsed = JSON.parse(cleaned) as unknown;
-    if (
-      parsed !== null &&
-      typeof parsed === 'object' &&
-      'label' in parsed &&
-      'summary' in parsed &&
-      typeof (parsed as Record<string, unknown>).label === 'string' &&
-      typeof (parsed as Record<string, unknown>).summary === 'string'
-    ) {
-      return parsed as { label: string; summary: string };
-    }
-  } catch {
-    // fall through
-  }
-  return null;
-}
 
 // ── main ─────────────────────────────────────────────────────────────────────
 
@@ -47,7 +21,9 @@ Deno.serve(async (req: Request) => {
     if (!cluster_id) return jsonResponse({ error: 'cluster_id is required' }, 400);
 
     const apiKey = Deno.env.get('OPENROUTER_API_KEY');
-    if (!apiKey) return jsonResponse({ error: 'OPENROUTER_API_KEY is not configured' }, 500);
+    if (!apiKey) {
+      return jsonResponse({ error: 'OPENROUTER_API_KEY is not configured' }, 500);
+    }
 
     const supabase = getServiceClient();
 
@@ -60,7 +36,9 @@ Deno.serve(async (req: Request) => {
       .limit(MAX_SAMPLES);
 
     if (fetchErr) throw fetchErr;
-    if (!responses?.length) return jsonResponse({ error: 'No responses found for cluster' }, 404);
+    if (!responses?.length) {
+      return jsonResponse({ error: 'No responses found for cluster' }, 404);
+    }
 
     const opinions = responses.map((r) => `- ${r.text}`).join('\n');
 
@@ -96,7 +74,7 @@ Deno.serve(async (req: Request) => {
     };
     const rawContent = llmData.choices?.[0]?.message?.content ?? '';
 
-    const parsed = safeParseJson(rawContent);
+    const parsed = safeParseLabel(rawContent);
     if (!parsed) {
       throw new Error(`Unexpected LLM output: ${rawContent}`);
     }

@@ -5,5 +5,14 @@
   "compilerOptions": {
     "lib": ["deno.ns", "deno.unstable", "dom"],
     "strict": true
+  },
+  "fmt": {
+    "singleQuote": true,
+    "lineWidth": 90
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
   }
 }

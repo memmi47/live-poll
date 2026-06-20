@@ -1,5 +1,5 @@
 .PHONY: help install link db-push db-reset functions-deploy secrets-set \
-        serve-functions type-check seed clean
+        serve-functions type-check test seed clean
 
 SUPABASE := supabase
 PROJECT_REF ?= $(shell $(SUPABASE) status --output json 2>/dev/null | jq -r '.DB_URL // empty')
@@ -19,6 +19,7 @@ help:
 	@echo "  Local dev:"
 	@echo "    make serve-functions   Run functions locally (needs supabase start)"
 	@echo "    make type-check        Run deno type-check on all functions"
+	@echo "    make test              Run deno unit tests (pure clustering/parse logic)"
 	@echo "    make seed              Run smoke-test / seed script (needs .env)"
 	@echo ""
 	@echo "  Reset:"
@@ -65,6 +66,10 @@ type-check:
 		get-poll/index.ts \
 		label-cluster/index.ts \
 		submit-response/index.ts
+
+# ── unit tests (no network / Docker needed) ──────────────────────────────────
+test:
+	cd supabase/functions && deno test tests/
 
 # ── seed / smoke-test ────────────────────────────────────────────────────────
 seed:

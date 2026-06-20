@@ -82,8 +82,19 @@ enabled = true
 policy = "oneshot"
 inspector_port = 8083
 
-[functions]
-# Shared import map for all Edge Functions
+# Each function shares the same import map (./functions/deno.json).
+# label-cluster is invoked server-to-server with the service-role key, so we
+# leave JWT verification on (the caller supplies a valid bearer token).
+[functions.create-poll]
+import_map = "./functions/deno.json"
+
+[functions.get-poll]
+import_map = "./functions/deno.json"
+
+[functions.submit-response]
+import_map = "./functions/deno.json"
+
+[functions.label-cluster]
 import_map = "./functions/deno.json"
 
 [analytics]

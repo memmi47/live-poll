@@ -19,8 +19,7 @@
  */
 
 const BASE_URL = Deno.env.get('SUPABASE_URL');
-const API_KEY =
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ??
+const API_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ??
   Deno.env.get('SUPABASE_ANON_KEY');
 
 if (!BASE_URL || !API_KEY) {
@@ -83,7 +82,9 @@ async function callFunction(
     body: JSON.stringify(body),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(`${path} → ${res.status}: ${JSON.stringify(json)}`);
+  if (!res.ok) {
+    throw new Error(`${path} → ${res.status}: ${JSON.stringify(json)}`);
+  }
   return json;
 }
 
@@ -115,7 +116,9 @@ let submitted = 0;
 for (const text of TEST_RESPONSES) {
   await callFunction('submit-response', { poll_id, kind: 'open', text });
   submitted++;
-  Deno.stdout.writeSync(enc.encode(`\r    ${submitted} / ${TEST_RESPONSES.length}`));
+  Deno.stdout.writeSync(
+    enc.encode(`\r    ${submitted} / ${TEST_RESPONSES.length}`),
+  );
 }
 console.log('\n    ✅  All responses submitted');
 console.log('');
@@ -166,11 +169,15 @@ if (clusters.length < 2) {
   errors.push(`Expected ≥ 2 clusters, got ${clusters.length}`);
 }
 if (clusters.length > 10) {
-  errors.push(`Expected ≤ 10 clusters, got ${clusters.length} (threshold may be too high)`);
+  errors.push(
+    `Expected ≤ 10 clusters, got ${clusters.length} (threshold may be too high)`,
+  );
 }
 const labelledCount = clusters.filter((c) => c.label !== null).length;
 if (labelledCount === 0) {
-  errors.push('No clusters received labels – check OPENROUTER_API_KEY and label-cluster logs');
+  errors.push(
+    'No clusters received labels – check OPENROUTER_API_KEY and label-cluster logs',
+  );
 }
 const totalAssigned = clusters.reduce((s, c) => s + c.member_count, 0);
 if (totalAssigned !== TEST_RESPONSES.length) {

@@ -1,0 +1,17 @@
+{
+  "fmt": {
+    "singleQuote": true,
+    "lineWidth": 90
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  },
+  "tasks": {
+    "test": "cd supabase/functions && deno test tests/",
+    "check": "cd supabase/functions && deno check --import-map=deno.json create-poll/index.ts get-poll/index.ts label-cluster/index.ts submit-response/index.ts",
+    "fmt": "deno fmt",
+    "lint": "deno lint"
+  }
+}
