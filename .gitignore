@@ -9,9 +9,6 @@ supabase/.temp
 node_modules/
 .DS_Store
 
-# Frontend build output
-web/dist/
-
 # Next.js build output and deps
 nextapp/.next/
 nextapp/node_modules/
