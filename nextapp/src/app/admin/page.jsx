@@ -25,10 +25,33 @@ function AdminInner() {
   const [history, setHistory] = useState([]);
   const [participants, setParticipants] = useState(0);
 
+  // Load history: localStorage first, then merge with DB recent polls
   useEffect(() => {
+    let local = [];
     try {
-      setHistory(JSON.parse(localStorage.getItem('lp_poll_history') || '[]'));
+      local = JSON.parse(localStorage.getItem('lp_poll_history') || '[]');
     } catch {}
+    setHistory(local);
+
+    if (!isLive) return;
+    supabase
+      .from('polls')
+      .select('pin, title, created_at')
+      .order('created_at', { ascending: false })
+      .limit(10)
+      .then(({ data }) => {
+        if (!data?.length) return;
+        const dbEntries = data.map((p) => ({ pin: p.pin, title: p.title, created_at: p.created_at }));
+        // merge: db entries first, deduplicated by pin
+        const merged = [...dbEntries];
+        for (const l of local) {
+          if (!merged.find((m) => m.pin === l.pin)) merged.push(l);
+        }
+        const top = merged.slice(0, 10);
+        setHistory(top);
+        localStorage.setItem('lp_poll_history', JSON.stringify(top));
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
