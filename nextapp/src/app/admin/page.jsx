@@ -73,6 +73,12 @@ function AdminInner() {
     } catch {}
   }
 
+  function removeHistoryPoll(pin) {
+    const updated = history.filter((h) => h.pin !== pin);
+    localStorage.setItem('lp_poll_history', JSON.stringify(updated));
+    setHistory(updated);
+  }
+
   return (
     <>
       {!isLive && (
@@ -83,7 +89,7 @@ function AdminInner() {
       <div style={{ minHeight: '100vh', background: '#e7e5df', padding: '24px 16px' }}>
         <div style={{ maxWidth: 1180, margin: '0 auto' }}>
           <TopHeading />
-          <RecentPollsBar history={history} onSelect={selectHistoryPoll} />
+          <RecentPollsBar history={history} onSelect={selectHistoryPoll} onRemove={removeHistoryPoll} />
           <div style={{
             background: '#fff', borderRadius: 14,
             boxShadow: '0 8px 30px rgba(15,23,42,.10)',
@@ -128,23 +134,36 @@ function TopHeading() {
   );
 }
 
-function RecentPollsBar({ history, onSelect }) {
+function RecentPollsBar({ history, onSelect, onRemove }) {
   if (!history.length) return null;
   return (
     <div style={{ marginBottom: 14, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
       <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--lp-faint)', flexShrink: 0 }}>이전 투표:</span>
       {history.map((h) => (
-        <button
-          key={h.pin}
-          onClick={() => onSelect(h.pin)}
-          style={{
-            padding: '5px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-            background: 'rgba(255,255,255,.9)', border: '1px solid var(--lp-border)',
-            color: 'var(--lp-ink)', cursor: 'pointer',
-          }}
-        >
-          {h.title || h.pin}
-        </button>
+        <div key={h.pin} style={{ position: 'relative', display: 'inline-flex' }}>
+          <button
+            onClick={() => onSelect(h.pin)}
+            style={{
+              padding: '5px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+              background: 'rgba(255,255,255,.9)', border: '1px solid var(--lp-border)',
+              color: 'var(--lp-ink)', cursor: 'pointer',
+            }}
+          >
+            {h.title || h.pin}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onRemove(h.pin); }}
+            aria-label="삭제"
+            style={{
+              position: 'absolute', top: -6, right: -6,
+              width: 18, height: 18, borderRadius: '50%',
+              background: '#94a3b8', color: '#fff', fontSize: 11,
+              border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontWeight: 700, lineHeight: 1,
+            }}
+          >×</button>
+        </div>
       ))}
     </div>
   );
@@ -249,6 +268,13 @@ function CreatePanel({ poll, onPollCreated }) {
           ? q.options.map((o) => o.trim()).filter(Boolean)
           : [],
     }));
+    const emptyIdx = normalizedQs.findIndex((q) => !q.title);
+    if (emptyIdx !== -1) {
+      setError(`질문 ${emptyIdx + 1}번 제목을 입력해 주세요`);
+      if (emptyIdx !== editQIdx) setEditQIdx(emptyIdx);
+      setBusy(false);
+      return;
+    }
     try {
       if (isLive) {
         const { poll: newPoll } = await createPoll({ questions: normalizedQs });
