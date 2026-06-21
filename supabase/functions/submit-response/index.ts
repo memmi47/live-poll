@@ -42,12 +42,13 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { poll_id, kind, choice_value, text, voter_id } = body as {
+    const { poll_id, kind, choice_value, text, voter_id, question_idx = 0 } = body as {
       poll_id: string;
       kind: string;
       choice_value?: string;
       text?: string;
       voter_id?: string;
+      question_idx?: number;
     };
 
     if (!poll_id || !kind) {
@@ -60,7 +61,7 @@ Deno.serve(async (req: Request) => {
     if (kind === 'choice') {
       const { data, error } = await supabase
         .from('responses')
-        .insert({ poll_id, kind, choice_value, ...(voter_id ? { voter_id } : {}) })
+        .insert({ poll_id, kind, choice_value, question_idx, ...(voter_id ? { voter_id } : {}) })
         .select()
         .single();
       if (error) {
@@ -81,9 +82,10 @@ Deno.serve(async (req: Request) => {
       const { data: rpcRows, error: rpcErr } = await supabase.rpc(
         'assign_or_create_cluster',
         {
-          p_poll_id:   poll_id,
-          p_embedding: formatVector(embedding),
-          p_threshold: SIMILARITY_THRESHOLD,
+          p_poll_id:       poll_id,
+          p_embedding:     formatVector(embedding),
+          p_threshold:     SIMILARITY_THRESHOLD,
+          p_question_idx:  question_idx,
         },
       );
       if (rpcErr) throw rpcErr;
@@ -95,7 +97,7 @@ Deno.serve(async (req: Request) => {
       // 3. Persist the response (embedding stored for potential future use)
       const { data: response, error: respErr } = await supabase
         .from('responses')
-        .insert({ poll_id, kind, text, embedding: formatVector(embedding), cluster_id, ...(voter_id ? { voter_id } : {}) })
+        .insert({ poll_id, kind, text, embedding: formatVector(embedding), cluster_id, question_idx, ...(voter_id ? { voter_id } : {}) })
         .select()
         .single();
       if (respErr) {

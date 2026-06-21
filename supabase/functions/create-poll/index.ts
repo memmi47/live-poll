@@ -5,45 +5,58 @@ function generatePin(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
+type QuestionInput = {
+  title: string;
+  question_type: string;
+  options?: unknown[];
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return corsResponse();
 
   try {
     const body = await req.json();
-    const { title, question_type, options = [] } = body as {
-      title: string;
-      question_type: string;
+    const { title, question_type, options = [], questions } = body as {
+      title?: string;
+      question_type?: string;
       options?: unknown[];
+      questions?: QuestionInput[];
     };
 
-    if (!title || !question_type) {
+    // Normalise to a questions array — supports both legacy single-question
+    // and new multi-question bodies.
+    const normalizedQuestions: QuestionInput[] =
+      questions && questions.length > 0
+        ? questions
+        : [{ title: title || '', question_type: question_type || 'choice', options }];
+
+    const firstQ = normalizedQuestions[0];
+
+    if (!firstQ.title || !firstQ.question_type) {
       return jsonResponse({ error: 'title and question_type are required' }, 400);
     }
-    if (!['choice', 'open', 'both'].includes(question_type)) {
-      return jsonResponse(
-        { error: "question_type must be 'choice', 'open', or 'both'" },
-        400,
-      );
+    if (!normalizedQuestions.every((q) => ['choice', 'open', 'both'].includes(q.question_type))) {
+      return jsonResponse({ error: "question_type must be 'choice', 'open', or 'both'" }, 400);
     }
 
     const supabase = getServiceClient();
 
-    // Retry until a unique 6-digit PIN is successfully inserted
     for (let attempt = 0; attempt < 10; attempt++) {
       const pin = generatePin();
       const { data, error } = await supabase
         .from('polls')
-        .insert({ pin, title, question_type, options })
+        .insert({
+          pin,
+          title:         firstQ.title,
+          question_type: firstQ.question_type,
+          options:       firstQ.options ?? [],
+          questions:     normalizedQuestions,
+        })
         .select()
         .single();
 
       if (!error) return jsonResponse({ poll: data }, 201);
-
-      // Only retry on unique-violation (Postgres error code 23505); rethrow
-      // anything else. Matching the code is more robust than the message text.
-      if (error.code !== '23505') {
-        throw error;
-      }
+      if (error.code !== '23505') throw error;
     }
 
     return jsonResponse({ error: 'Failed to generate a unique PIN' }, 500);

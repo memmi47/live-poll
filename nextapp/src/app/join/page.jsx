@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { getPoll, isLive, submitResponse } from '../../lib/api';
 
 const PIN_LEN = 6;
@@ -11,6 +11,10 @@ const DEMO_POLL = {
   title: '오늘 점심 메뉴는 어디로 할까요?',
   question_type: 'both',
   options: ['한식', '양식', '중식', '일식'],
+  questions: [
+    { title: '오늘 점심 메뉴는 어디로 할까요?', question_type: 'both', options: ['한식', '양식', '중식', '일식'] },
+    { title: '선호하는 분위기는 어떤가요?', question_type: 'choice', options: ['조용한 곳', '활기찬 곳', '상관없음'] },
+  ],
 };
 
 function getVoterId() {
@@ -98,7 +102,16 @@ export default function JoinPage() {
   );
 }
 
-function Phone({ children, pin, dark = false }) {
+function Phone({ children, pin }) {
+  const [time, setTime] = useState('');
+  useEffect(() => {
+    const fmt = () =>
+      new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+    setTime(fmt());
+    const t = setInterval(() => setTime(fmt()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -120,7 +133,7 @@ function Phone({ children, pin, dark = false }) {
         <div style={{
           borderRadius: 18,
           overflow: 'hidden',
-          background: dark ? 'var(--lp-primary)' : 'var(--lp-bg)',
+          background: 'var(--lp-bg)',
           minHeight: 600,
           display: 'flex',
           flexDirection: 'column',
@@ -131,9 +144,9 @@ function Phone({ children, pin, dark = false }) {
             justifyContent: 'space-between',
             fontSize: 12,
             fontWeight: 700,
-            color: dark ? 'rgba(255,255,255,.7)' : 'var(--lp-faint)',
+            color: 'var(--lp-faint)',
           }}>
-            <span>9:41</span>
+            <span>{time}</span>
             <span>{pin}</span>
           </div>
           {children}
@@ -205,34 +218,53 @@ function PinStep({ pin, setPin, onEnter, busy, error }) {
 }
 
 function QuestionStep({ poll, onDone }) {
-  const showChoice = poll.question_type === 'choice' || poll.question_type === 'both';
-  const showOpen = poll.question_type === 'open' || poll.question_type === 'both';
+  // Normalise to questions array (supports legacy single-question polls)
+  const questions =
+    poll.questions && poll.questions.length > 0
+      ? poll.questions
+      : [{ title: poll.title, question_type: poll.question_type, options: poll.options }];
 
+  const [qIdx, setQIdx] = useState(0);
   const [selected, setSelected] = useState(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const options = Array.isArray(poll.options) ? poll.options : [];
-  const canSubmit = (!showChoice || selected !== null) && (!showOpen || text.trim().length > 0);
+  const currentQ = questions[qIdx];
+  const isLastQ = qIdx === questions.length - 1;
+  const showChoice = currentQ.question_type === 'choice' || currentQ.question_type === 'both';
+  const showOpen = currentQ.question_type === 'open' || currentQ.question_type === 'both';
+  const options = Array.isArray(currentQ.options) ? currentQ.options : [];
 
-  async function submit() {
+  // For "both": at least one of choice/open must be filled (open is supplementary)
+  const canAdvance = showChoice && showOpen
+    ? (selected !== null || text.trim().length > 0)
+    : (!showChoice || selected !== null) && (!showOpen || text.trim().length > 0);
+
+  async function submitAndAdvance() {
     setBusy(true);
     setError('');
     try {
       if (isLive) {
         const voter_id = getVoterId();
         if (showChoice && selected !== null) {
-          await submitResponse({ poll_id: poll.id, kind: 'choice', choice_value: options[selected], voter_id });
+          await submitResponse({ poll_id: poll.id, kind: 'choice', choice_value: options[selected], voter_id, question_idx: qIdx });
         }
         if (showOpen && text.trim()) {
-          await submitResponse({ poll_id: poll.id, kind: 'open', text: text.trim(), voter_id });
+          await submitResponse({ poll_id: poll.id, kind: 'open', text: text.trim(), voter_id, question_idx: qIdx });
         }
+        // Mark as voted after first question so re-entry shows DoneStep
         saveVotedPoll(poll.id);
+      } else {
+        await new Promise((r) => setTimeout(r, 300));
+      }
+
+      if (isLastQ) {
         onDone(false);
       } else {
-        await new Promise((r) => setTimeout(r, 450));
-        onDone(false);
+        setQIdx((q) => q + 1);
+        setSelected(null);
+        setText('');
       }
     } catch (e) {
       if (e.message === 'already_voted') {
@@ -248,11 +280,26 @@ function QuestionStep({ poll, onDone }) {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 24 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--lp-faint)', letterSpacing: '.06em', marginBottom: 10 }}>
-        {showOpen && !showChoice ? '자유 의견' : '질문 1 / 1'}
+      {/* Progress */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--lp-faint)', letterSpacing: '.06em' }}>
+          {showOpen && !showChoice ? '자유 의견' : `질문 ${qIdx + 1} / ${questions.length}`}
+        </div>
+        {questions.length > 1 && (
+          <div style={{ display: 'flex', gap: 4 }}>
+            {questions.map((_, i) => (
+              <div key={i} style={{
+                width: i === qIdx ? 18 : 6, height: 6, borderRadius: 3,
+                background: i <= qIdx ? 'var(--lp-primary)' : 'var(--lp-border)',
+                transition: 'width .2s',
+              }} />
+            ))}
+          </div>
+        )}
       </div>
+
       <div style={{ fontSize: 23, fontWeight: 800, letterSpacing: '-.01em', lineHeight: 1.3, marginBottom: 22 }}>
-        {poll.title}
+        {currentQ.title}
       </div>
 
       {showChoice && (
@@ -291,15 +338,15 @@ function QuestionStep({ poll, onDone }) {
             value={text}
             maxLength={200}
             onChange={(e) => setText(e.target.value)}
-            placeholder="의견을 자유롭게 적어주세요"
+            placeholder={showChoice ? '위 보기에 없으면 여기에 자유롭게 적어주세요 (선택)' : '의견을 자유롭게 적어주세요'}
             style={{
-              flex: 1, minHeight: 120, resize: 'none', background: '#fff',
+              flex: 1, minHeight: 100, resize: 'none', background: '#fff',
               border: '1.5px solid var(--lp-primary)', borderRadius: 14,
-              padding: 18, fontSize: 17, lineHeight: 1.5, outline: 'none',
+              padding: 18, fontSize: 16, lineHeight: 1.5, outline: 'none',
               boxShadow: '0 0 0 4px rgba(52,83,140,.1)',
             }}
           />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: 12, color: 'var(--lp-faint)', margin: '8px 2px 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', fontSize: 12, color: 'var(--lp-faint)', margin: '6px 2px 0' }}>
             {text.length} / 200
           </div>
         </div>
@@ -313,11 +360,11 @@ function QuestionStep({ poll, onDone }) {
 
       <button
         className="lp-btn lp-btn--ink"
-        onClick={submit}
-        disabled={!canSubmit || busy}
-        style={{ marginTop: showOpen ? 16 : 'auto' }}
+        onClick={submitAndAdvance}
+        disabled={!canAdvance || busy}
+        style={{ marginTop: showOpen ? 12 : 'auto' }}
       >
-        {busy ? '제출 중…' : '제출하기'}
+        {busy ? '처리 중…' : isLastQ ? '제출하기' : '다음 질문'}
       </button>
     </div>
   );

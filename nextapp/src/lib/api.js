@@ -27,8 +27,8 @@ async function callFn(name, body, init = {}) {
   return json;
 }
 
-export function createPoll({ title, question_type, options }) {
-  return callFn('create-poll', { title, question_type, options });
+export function createPoll({ title, question_type, options, questions }) {
+  return callFn('create-poll', { title, question_type, options, questions });
 }
 
 export function getPoll(pin) {
@@ -41,25 +41,27 @@ export function getPoll(pin) {
   });
 }
 
-export function submitResponse({ poll_id, kind, choice_value, text, voter_id }) {
-  return callFn('submit-response', { poll_id, kind, choice_value, text, voter_id });
+export function submitResponse({ poll_id, kind, choice_value, text, voter_id, question_idx = 0 }) {
+  return callFn('submit-response', { poll_id, kind, choice_value, text, voter_id, question_idx });
 }
 
-export async function fetchChoiceResponses(pollId) {
+export async function fetchChoiceResponses(pollId, questionIdx = 0) {
   const { data, error } = await supabase
     .from('responses')
     .select('choice_value')
     .eq('poll_id', pollId)
+    .eq('question_idx', questionIdx)
     .eq('kind', 'choice');
   if (error) throw error;
   return data ?? [];
 }
 
-export async function fetchClusters(pollId) {
+export async function fetchClusters(pollId, questionIdx = 0) {
   const { data, error } = await supabase
     .from('clusters')
     .select('id, label, summary, member_count')
     .eq('poll_id', pollId)
+    .eq('question_idx', questionIdx)
     .order('member_count', { ascending: false });
   if (error) throw error;
   return data ?? [];

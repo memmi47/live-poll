@@ -13,6 +13,7 @@ import {
   isLive,
   subscribeClusters,
   subscribeResponses,
+  supabase,
 } from '../../lib/api';
 
 function AdminInner() {
@@ -22,6 +23,7 @@ function AdminInner() {
 
   const [poll, setPoll] = useState(null);
   const [history, setHistory] = useState([]);
+  const [participants, setParticipants] = useState(0);
 
   useEffect(() => {
     try {
@@ -36,8 +38,26 @@ function AdminInner() {
       .catch(() => {});
   }, [pinFromUrl]);
 
+  useEffect(() => {
+    if (!isLive || !poll?.id) return;
+    const fetchParticipants = () => {
+      supabase
+        .from('responses')
+        .select('voter_id')
+        .eq('poll_id', poll.id)
+        .not('voter_id', 'is', null)
+        .then(({ data }) => {
+          if (data) setParticipants(new Set(data.map((r) => r.voter_id)).size);
+        });
+    };
+    fetchParticipants();
+    const timer = setInterval(fetchParticipants, 5000);
+    return () => clearInterval(timer);
+  }, [poll?.id]);
+
   function onPollCreated(newPoll) {
-    setPoll({ ...newPoll, participants: 0 });
+    setPoll({ ...newPoll });
+    setParticipants(0);
     router.push(`/admin?pin=${newPoll.pin}`, { scroll: false });
     const newEntry = { pin: newPoll.pin, title: newPoll.title, created_at: new Date().toISOString() };
     const updated = [newEntry, ...history.filter((h) => h.pin !== newPoll.pin)].slice(0, 5);
@@ -69,7 +89,7 @@ function AdminInner() {
             boxShadow: '0 8px 30px rgba(15,23,42,.10)',
             overflow: 'hidden', border: '1px solid var(--lp-border)',
           }}>
-            <DashboardBar poll={poll} />
+            <DashboardBar poll={poll} participants={participants} />
             <div style={{ display: 'flex', gap: 28, padding: '24px 20px', flexWrap: 'wrap' }}>
               <CreatePanel poll={poll} onPollCreated={onPollCreated} />
               <ResultsPanel poll={poll} />
@@ -130,8 +150,8 @@ function RecentPollsBar({ history, onSelect }) {
   );
 }
 
-function DashboardBar({ poll }) {
-  const participants = poll?.participants ?? (isLive ? 0 : 74);
+function DashboardBar({ poll, participants }) {
+  const count = isLive ? participants : 74;
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -147,36 +167,102 @@ function DashboardBar({ poll }) {
       </div>
       <span className="lp-live">
         <span className="lp-live__dot" />
-        LIVE · {participants}명 참여 중
+        LIVE · {count}명 참여 중
       </span>
     </div>
   );
 }
 
+// ── Arrow button style ────────────────────────────────────────────────────────
+function ArrowBtn({ onClick, disabled, children }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: 28, height: 28, padding: 0, borderRadius: 6,
+        border: '1px solid var(--lp-border)', background: 'var(--lp-surface)',
+        color: disabled ? 'var(--lp-border)' : 'var(--lp-ink)',
+        fontSize: 18, fontWeight: 700, lineHeight: 1, cursor: disabled ? 'default' : 'pointer',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ── CreatePanel ───────────────────────────────────────────────────────────────
 function CreatePanel({ poll, onPollCreated }) {
-  const [title, setTitle] = useState('');
-  const [type, setType] = useState('choice');
-  const [options, setOptions] = useState(['', '']);
+  const [questions, setQuestions] = useState([
+    { title: '', question_type: 'choice', options: ['', ''] },
+  ]);
+  const [editQIdx, setEditQIdx] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const showOptions = type === 'choice' || type === 'both';
+  const currentQ = questions[editQIdx];
+  const showOptions = currentQ.question_type === 'choice' || currentQ.question_type === 'both';
 
-  function setOpt(i, v) { setOptions((o) => o.map((x, idx) => (idx === i ? v : x))); }
-  function addOpt() { setOptions((o) => [...o, '']); }
-  function removeOpt(i) { setOptions((o) => o.filter((_, idx) => idx !== i)); }
+  function updateQ(field, val) {
+    setQuestions((qs) => qs.map((q, i) => (i === editQIdx ? { ...q, [field]: val } : q)));
+  }
+  function setOpt(i, v) {
+    setQuestions((qs) =>
+      qs.map((q, qi) =>
+        qi === editQIdx ? { ...q, options: q.options.map((o, oi) => (oi === i ? v : o)) } : q,
+      ),
+    );
+  }
+  function addOpt() {
+    setQuestions((qs) =>
+      qs.map((q, i) => (i === editQIdx ? { ...q, options: [...q.options, ''] } : q)),
+    );
+  }
+  function removeOpt(i) {
+    setQuestions((qs) =>
+      qs.map((q, qi) =>
+        qi === editQIdx ? { ...q, options: q.options.filter((_, oi) => oi !== i) } : q,
+      ),
+    );
+  }
+  function addQuestion() {
+    const newQs = [...questions, { title: '', question_type: 'choice', options: ['', ''] }];
+    setQuestions(newQs);
+    setEditQIdx(newQs.length - 1);
+  }
+  function removeQuestion() {
+    if (questions.length <= 1) return;
+    const newQs = questions.filter((_, i) => i !== editQIdx);
+    setQuestions(newQs);
+    setEditQIdx((idx) => Math.min(idx, newQs.length - 1));
+  }
 
   async function create() {
     setBusy(true);
     setError('');
-    const cleanOpts = options.map((o) => o.trim()).filter(Boolean);
+    const normalizedQs = questions.map((q) => ({
+      title: q.title.trim(),
+      question_type: q.question_type,
+      options:
+        q.question_type === 'choice' || q.question_type === 'both'
+          ? q.options.map((o) => o.trim()).filter(Boolean)
+          : [],
+    }));
     try {
       if (isLive) {
-        const { poll: newPoll } = await createPoll({ title: title.trim(), question_type: type, options: showOptions ? cleanOpts : [] });
+        const { poll: newPoll } = await createPoll({ questions: normalizedQs });
         onPollCreated(newPoll);
       } else {
         await new Promise((r) => setTimeout(r, 350));
-        onPollCreated({ id: 'demo', pin: '482901', title: title.trim() || '데모 투표', question_type: type, options: showOptions ? cleanOpts : [] });
+        onPollCreated({
+          id: 'demo',
+          pin: '482901',
+          title: normalizedQs[0].title || '데모 투표',
+          question_type: normalizedQs[0].question_type,
+          options: normalizedQs[0].options,
+          questions: normalizedQs,
+        });
       }
     } catch (e) {
       setError(e.message || '생성에 실패했어요');
@@ -188,12 +274,28 @@ function CreatePanel({ poll, onPollCreated }) {
   return (
     <div style={{ flex: 'none', width: '100%', maxWidth: 380, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ border: '1px solid var(--lp-border)', borderRadius: 12, padding: 20 }}>
-        <SectionLabel>투표 만들기</SectionLabel>
+        {/* Header row: label + question navigator */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--lp-faint)', letterSpacing: '.06em' }}>
+            투표 만들기
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {questions.length > 1 && (
+              <>
+                <ArrowBtn disabled={editQIdx === 0} onClick={() => setEditQIdx((i) => i - 1)}>‹</ArrowBtn>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--lp-faint)', minWidth: 40, textAlign: 'center' }}>
+                  {editQIdx + 1} / {questions.length}
+                </span>
+                <ArrowBtn disabled={editQIdx === questions.length - 1} onClick={() => setEditQIdx((i) => i + 1)}>›</ArrowBtn>
+              </>
+            )}
+          </div>
+        </div>
 
         <FieldLabel>제목</FieldLabel>
         <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          value={currentQ.title}
+          onChange={(e) => updateQ('title', e.target.value)}
           placeholder="예) 다음 팀 회식 날짜는 언제가 좋을까요?"
           style={inputStyle(false)}
         />
@@ -201,10 +303,10 @@ function CreatePanel({ poll, onPollCreated }) {
         <FieldLabel style={{ marginTop: 16 }}>유형</FieldLabel>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           {[['choice', '객관식'], ['open', '주관식'], ['both', '둘 다']].map(([val, label]) => (
-            <button key={val} onClick={() => setType(val)} style={{
+            <button key={val} onClick={() => updateQ('question_type', val)} style={{
               flex: 1,
-              background: type === val ? 'var(--lp-primary)' : 'var(--lp-surface)',
-              color: type === val ? '#fff' : 'var(--lp-muted)',
+              background: currentQ.question_type === val ? 'var(--lp-primary)' : 'var(--lp-surface)',
+              color: currentQ.question_type === val ? '#fff' : 'var(--lp-muted)',
               textAlign: 'center', padding: 10, borderRadius: 9, fontSize: 13, fontWeight: 700,
             }}>{label}</button>
           ))}
@@ -214,11 +316,20 @@ function CreatePanel({ poll, onPollCreated }) {
           <>
             <FieldLabel>보기</FieldLabel>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-              {options.map((opt, i) => (
+              {currentQ.options.map((opt, i) => (
                 <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input value={opt} onChange={(e) => setOpt(i, e.target.value)} placeholder={`보기 ${i + 1}`} style={inputStyle(false)} />
-                  {options.length > 1 && (
-                    <button onClick={() => removeOpt(i)} style={{ background: 'transparent', color: 'var(--lp-faint)', fontSize: 18, padding: '0 4px' }} aria-label="보기 삭제">×</button>
+                  <input
+                    value={opt}
+                    onChange={(e) => setOpt(i, e.target.value)}
+                    placeholder={`보기 ${i + 1}`}
+                    style={inputStyle(false)}
+                  />
+                  {currentQ.options.length > 1 && (
+                    <button
+                      onClick={() => removeOpt(i)}
+                      style={{ background: 'transparent', color: 'var(--lp-faint)', fontSize: 18, padding: '0 4px' }}
+                      aria-label="보기 삭제"
+                    >×</button>
                   )}
                 </div>
               ))}
@@ -229,6 +340,20 @@ function CreatePanel({ poll, onPollCreated }) {
             </div>
           </>
         )}
+
+        {/* Question management buttons */}
+        <div style={{ display: 'flex', gap: 8, marginBottom: error ? 12 : 16 }}>
+          <button onClick={addQuestion} style={{
+            flex: 1, border: '1px dashed #93c5fd', borderRadius: 9, padding: '9px 12px',
+            fontSize: 13, color: 'var(--lp-primary)', fontWeight: 700, background: 'transparent',
+          }}>+ 질문 추가</button>
+          {questions.length > 1 && (
+            <button onClick={removeQuestion} style={{
+              border: '1px dashed #fca5a5', borderRadius: 9, padding: '9px 12px',
+              fontSize: 13, color: '#dc2626', fontWeight: 700, background: 'transparent',
+            }}>이 질문 삭제</button>
+          )}
+        </div>
 
         {error && <div style={{ color: '#dc2626', fontSize: 13, fontWeight: 600, marginBottom: 12 }}>{error}</div>}
 
@@ -264,13 +389,51 @@ function JoinPanel({ poll }) {
   );
 }
 
+// ── ResultsPanel ──────────────────────────────────────────────────────────────
 function ResultsPanel({ poll }) {
-  const { barData, bubbleData, total } = usePollResults(poll);
-  const showBars = !poll || poll.question_type === 'choice' || poll.question_type === 'both';
-  const showBubbles = !poll || poll.question_type === 'open' || poll.question_type === 'both';
+  const [viewQIdx, setViewQIdx] = useState(0);
+
+  // Normalize to questions array (same logic as join page)
+  const questions =
+    poll?.questions?.length > 0
+      ? poll.questions
+      : poll
+      ? [{ title: poll.title, question_type: poll.question_type, options: poll.options }]
+      : null;
+
+  const totalQs = questions?.length ?? 0;
+  const currentQ = questions?.[viewQIdx] ?? null;
+
+  // Reset view index when poll changes
+  useEffect(() => { setViewQIdx(0); }, [poll?.id]);
+
+  const { barData, bubbleData, total } = usePollResults(poll, viewQIdx);
+
+  const showBars = !currentQ || currentQ.question_type === 'choice' || currentQ.question_type === 'both';
+  const showBubbles = !currentQ || currentQ.question_type === 'open' || currentQ.question_type === 'both';
 
   return (
     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {/* Multi-question navigation */}
+      {totalQs > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <ArrowBtn disabled={viewQIdx === 0} onClick={() => setViewQIdx((i) => i - 1)}>‹</ArrowBtn>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--lp-faint)' }}>
+            질문 {viewQIdx + 1} / {totalQs}
+          </span>
+          <ArrowBtn disabled={viewQIdx === totalQs - 1} onClick={() => setViewQIdx((i) => i + 1)}>›</ArrowBtn>
+          {currentQ?.title && (
+            <span style={{
+              fontSize: 13, fontWeight: 600, color: 'var(--lp-ink)',
+              marginLeft: 4, flex: 1, minWidth: 0,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {currentQ.title}
+            </span>
+          )}
+        </div>
+      )}
+
       {showBars && (
         <Card>
           <CardHead title="객관식 결과 · 막대그래프" meta={`총 ${total.votes}표`} />
@@ -293,7 +456,8 @@ function ResultsPanel({ poll }) {
   );
 }
 
-function usePollResults(poll) {
+// ── usePollResults ────────────────────────────────────────────────────────────
+function usePollResults(poll, questionIdx = 0) {
   const [counts, setCounts] = useState({});
   const [clusters, setClusters] = useState([]);
   const timer = useRef(null);
@@ -304,9 +468,13 @@ function usePollResults(poll) {
     if (timer.current) clearInterval(timer.current);
 
     if (!isLive) {
-      const opts = poll && Array.isArray(poll.options) && poll.options.length
-        ? poll.options
-        : ['한식', '양식', '중식', '일식'];
+      const currentQ = poll?.questions?.[questionIdx] ?? null;
+      const opts =
+        currentQ?.options?.length
+          ? currentQ.options
+          : poll && Array.isArray(poll.options) && poll.options.length
+          ? poll.options
+          : ['한식', '양식', '중식', '일식'];
       setCounts(Object.fromEntries(opts.map((o, i) => [o, [34, 21, 13, 6][i] ?? 4])));
       setClusters([
         { id: '1', label: '분위기 중시', member_count: 9, summary: '조용하고 편한 분위기를 선호한다는 의견' },
@@ -330,7 +498,7 @@ function usePollResults(poll) {
     let unsubR = () => {};
     let unsubC = () => {};
 
-    fetchChoiceResponses(poll.id)
+    fetchChoiceResponses(poll.id, questionIdx)
       .then((rows) => {
         const tally = {};
         for (const r of rows) {
@@ -339,21 +507,22 @@ function usePollResults(poll) {
         setCounts(tally);
       })
       .catch(() => {});
-    fetchClusters(poll.id).then(setClusters).catch(() => {});
+    fetchClusters(poll.id, questionIdx).then(setClusters).catch(() => {});
 
     unsubR = subscribeResponses(poll.id, (row) => {
       if (row.poll_id !== poll.id) return;
+      if (row.question_idx !== questionIdx) return;
       if (row.kind === 'choice' && row.choice_value) {
         setCounts((c) => ({ ...c, [row.choice_value]: (c[row.choice_value] || 0) + 1 }));
       }
     });
     unsubC = subscribeClusters(poll.id, () => {
-      fetchClusters(poll.id).then(setClusters).catch(() => {});
+      fetchClusters(poll.id, questionIdx).then(setClusters).catch(() => {});
     });
 
     // Polling fallback: re-fetch every 5s in case Realtime misses events
     timer.current = setInterval(() => {
-      fetchChoiceResponses(poll.id)
+      fetchChoiceResponses(poll.id, questionIdx)
         .then((rows) => {
           const tally = {};
           for (const r of rows) {
@@ -362,15 +531,25 @@ function usePollResults(poll) {
           setCounts(tally);
         })
         .catch(() => {});
-      fetchClusters(poll.id).then(setClusters).catch(() => {});
+      fetchClusters(poll.id, questionIdx).then(setClusters).catch(() => {});
     }, 5000);
 
     return () => { unsubR(); unsubC(); clearInterval(timer.current); };
-  }, [poll?.id]);
+  }, [poll?.id, questionIdx]);
 
-  const options = poll && Array.isArray(poll.options) && poll.options.length ? poll.options : Object.keys(counts);
+  const currentQ = poll?.questions?.[questionIdx];
+  const options =
+    currentQ?.options?.length
+      ? currentQ.options
+      : poll && Array.isArray(poll.options) && poll.options.length
+      ? poll.options
+      : Object.keys(counts);
   const barData = options.map((o) => ({ option: o, count: counts[o] || 0 }));
-  const bubbleData = clusters.map((c) => ({ label: c.label || '묶는 중…', member_count: c.member_count, summary: c.summary }));
+  const bubbleData = clusters.map((c) => ({
+    label: c.label || '묶는 중…',
+    member_count: c.member_count,
+    summary: c.summary,
+  }));
   const total = {
     votes: barData.reduce((s, b) => s + b.count, 0),
     resp: clusters.reduce((s, c) => s + c.member_count, 0),
@@ -378,6 +557,7 @@ function usePollResults(poll) {
   return { barData, bubbleData, total };
 }
 
+// ── Utility components ────────────────────────────────────────────────────────
 function Card({ children }) {
   return <div style={{ border: '1px solid var(--lp-border)', borderRadius: 12, padding: 22 }}>{children}</div>;
 }
