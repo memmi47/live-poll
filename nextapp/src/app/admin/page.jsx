@@ -70,6 +70,11 @@ function AdminInner() {
       const { poll: p } = await getPoll(pin);
       setPoll(p);
       router.push(`/admin?pin=${pin}`, { scroll: false });
+      // save to history if not already there
+      const newEntry = { pin: p.pin, title: p.title, created_at: p.created_at ?? new Date().toISOString() };
+      const updated = [newEntry, ...history.filter((h) => h.pin !== p.pin)].slice(0, 5);
+      localStorage.setItem('lp_poll_history', JSON.stringify(updated));
+      setHistory(updated);
     } catch {}
   }
 
@@ -88,7 +93,7 @@ function AdminInner() {
       )}
       <div style={{ minHeight: '100vh', background: '#e7e5df', padding: '24px 16px' }}>
         <div style={{ maxWidth: 1180, margin: '0 auto' }}>
-          <TopHeading />
+          <TopHeading onLoad={selectHistoryPoll} />
           <RecentPollsBar history={history} onSelect={selectHistoryPoll} onRemove={removeHistoryPoll} />
           <div style={{
             background: '#fff', borderRadius: 14,
@@ -115,7 +120,25 @@ export default function AdminPage() {
   );
 }
 
-function TopHeading() {
+function TopHeading({ onLoad }) {
+  const [pin, setPin] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function load() {
+    if (pin.length !== 6) return;
+    setBusy(true);
+    setErr('');
+    try {
+      await onLoad(pin);
+      setPin('');
+    } catch {
+      setErr('투표를 찾을 수 없어요');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div style={{ marginBottom: 16 }}>
       <div style={{
@@ -124,11 +147,44 @@ function TopHeading() {
       }}>
         LivePoll · 관리자
       </div>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'baseline' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.02em' }}>대시보드</div>
         <Link href="/join" style={{ fontSize: 14, color: 'var(--lp-muted)', fontWeight: 600 }}>
           참여자 화면 →
         </Link>
+        {isLive && (
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 'auto' }}>
+            <input
+              type="tel"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              value={pin}
+              onChange={(e) => { setPin(e.target.value.replace(/\D/g, '').slice(0, 6)); setErr(''); }}
+              onKeyDown={(e) => e.key === 'Enter' && load()}
+              placeholder="PIN 6자리"
+              style={{
+                width: 120, padding: '8px 12px', borderRadius: 9,
+                border: `1.5px solid ${err ? '#fca5a5' : 'rgba(255,255,255,.6)'}`,
+                background: 'rgba(255,255,255,.85)', fontSize: 14,
+                fontWeight: 700, letterSpacing: '.15em', outline: 'none',
+              }}
+            />
+            <button
+              onClick={load}
+              disabled={pin.length !== 6 || busy}
+              style={{
+                padding: '8px 14px', borderRadius: 9,
+                background: pin.length === 6 ? 'var(--lp-primary)' : '#cbd5e1',
+                color: '#fff', fontSize: 13, fontWeight: 700, border: 'none',
+                cursor: pin.length === 6 ? 'pointer' : 'default',
+              }}
+            >
+              {busy ? '…' : '불러오기'}
+            </button>
+            {err && <span style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{err}</span>}
+          </div>
+        )}
       </div>
     </div>
   );
