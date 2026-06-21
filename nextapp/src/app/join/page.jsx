@@ -241,7 +241,11 @@ function QuestionStep({ poll, onDone }) {
     ? (selected !== null || text.trim().length > 0)
     : (!showChoice || selected !== null) && (!showOpen || text.trim().length > 0);
 
+  const submittingRef = React.useRef(false);
+
   async function submitAndAdvance() {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setBusy(true);
     setError('');
     try {
@@ -275,6 +279,7 @@ function QuestionStep({ poll, onDone }) {
       }
     } finally {
       setBusy(false);
+      submittingRef.current = false;
     }
   }
 

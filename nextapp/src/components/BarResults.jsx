@@ -24,19 +24,23 @@ export default function BarResults({ data = [], stage = false }) {
   const tickColor = stage ? '#E2E8F0' : tokens.color.ink;
   const barBg = stage ? tokens.color.stagePanel : tokens.color.surface;
 
+  // Dynamic Y-axis width based on longest label (Korean chars ~18px each)
+  const maxLen = Math.max(...data.map((d) => (d.option || '').length), 1);
+  const yAxisWidth = stage ? 200 : Math.min(Math.max(maxLen * 18, 48), 130);
+
   return (
     <ResponsiveContainer width="100%" height={Math.max(data.length * (stage ? 76 : 54), 120)}>
       <BarChart
         data={data}
         layout="vertical"
-        margin={{ top: 8, right: 64, bottom: 8, left: 8 }}
+        margin={{ top: 8, right: 80, bottom: 8, left: 4 }}
         barCategoryGap={stage ? '30%' : '24%'}
       >
         <XAxis type="number" hide domain={[0, 'dataMax']} />
         <YAxis
           type="category"
           dataKey="option"
-          width={stage ? 200 : 130}
+          width={yAxisWidth}
           axisLine={false}
           tickLine={false}
           tick={{
