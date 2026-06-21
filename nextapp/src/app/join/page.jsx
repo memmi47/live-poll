@@ -8,10 +8,36 @@ const PIN_LEN = 6;
 const DEMO_POLL = {
   id: 'demo',
   pin: '482901',
-  title: '신규 기능을 예정대로 출시할까요?',
+  title: '오늘 점심 메뉴는 어디로 할까요?',
   question_type: 'both',
-  options: ['예정대로 진행', '일정 연기', '범위 축소', '잘 모르겠음'],
+  options: ['한식', '양식', '중식', '일식'],
 };
+
+function getVoterId() {
+  let id = localStorage.getItem('lp_voter_id');
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem('lp_voter_id', id);
+  }
+  return id;
+}
+
+function saveVotedPoll(pollId) {
+  try {
+    const voted = JSON.parse(localStorage.getItem('lp_voted_polls') || '[]');
+    if (!voted.includes(pollId)) {
+      localStorage.setItem('lp_voted_polls', JSON.stringify([...voted, pollId]));
+    }
+  } catch {}
+}
+
+function hasVotedForPoll(pollId) {
+  try {
+    return JSON.parse(localStorage.getItem('lp_voted_polls') || '[]').includes(pollId);
+  } catch {
+    return false;
+  }
+}
 
 export default function JoinPage() {
   const [stage, setStage] = useState('pin');
@@ -19,6 +45,7 @@ export default function JoinPage() {
   const [poll, setPoll] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [alreadyVoted, setAlreadyVoted] = useState(false);
 
   async function enter() {
     if (pin.length !== PIN_LEN) return;
@@ -26,8 +53,13 @@ export default function JoinPage() {
     setError('');
     try {
       if (isLive) {
-        const { poll } = await getPoll(pin);
-        setPoll(poll);
+        const { poll: p } = await getPoll(pin);
+        setPoll(p);
+        if (hasVotedForPoll(p.id)) {
+          setAlreadyVoted(true);
+          setStage('done');
+          return;
+        }
       } else {
         await new Promise((r) => setTimeout(r, 400));
         setPoll(DEMO_POLL);
@@ -52,9 +84,15 @@ export default function JoinPage() {
           <PinStep pin={pin} setPin={setPin} onEnter={enter} busy={busy} error={error} />
         )}
         {stage === 'question' && (
-          <QuestionStep poll={poll} onDone={() => setStage('done')} />
+          <QuestionStep
+            poll={poll}
+            onDone={(wasAlreadyVoted) => {
+              setAlreadyVoted(wasAlreadyVoted);
+              setStage('done');
+            }}
+          />
         )}
-        {stage === 'done' && <DoneStep />}
+        {stage === 'done' && <DoneStep alreadyVoted={alreadyVoted} />}
       </Phone>
     </>
   );
@@ -138,8 +176,10 @@ function PinStep({ pin, setPin, onEnter, busy, error }) {
 
       <input
         autoFocus
+        type="tel"
         inputMode="numeric"
         pattern="[0-9]*"
+        autoComplete="one-time-code"
         value={pin}
         onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, PIN_LEN))}
         onKeyDown={(e) => e.key === 'Enter' && onEnter()}
@@ -181,18 +221,26 @@ function QuestionStep({ poll, onDone }) {
     setError('');
     try {
       if (isLive) {
+        const voter_id = getVoterId();
         if (showChoice && selected !== null) {
-          await submitResponse({ poll_id: poll.id, kind: 'choice', choice_value: options[selected] });
+          await submitResponse({ poll_id: poll.id, kind: 'choice', choice_value: options[selected], voter_id });
         }
         if (showOpen && text.trim()) {
-          await submitResponse({ poll_id: poll.id, kind: 'open', text: text.trim() });
+          await submitResponse({ poll_id: poll.id, kind: 'open', text: text.trim(), voter_id });
         }
+        saveVotedPoll(poll.id);
+        onDone(false);
       } else {
         await new Promise((r) => setTimeout(r, 450));
+        onDone(false);
       }
-      onDone();
     } catch (e) {
-      setError(e.message || '제출에 실패했어요');
+      if (e.message === 'already_voted') {
+        saveVotedPoll(poll.id);
+        onDone(true);
+      } else {
+        setError(e.message || '제출에 실패했어요');
+      }
     } finally {
       setBusy(false);
     }
@@ -275,7 +323,7 @@ function QuestionStep({ poll, onDone }) {
   );
 }
 
-function DoneStep() {
+function DoneStep({ alreadyVoted }) {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--lp-primary)' }}>
       <div style={{
@@ -298,20 +346,25 @@ function DoneStep() {
             ✓
           </div>
         </div>
-        <div style={{ fontSize: 28, fontWeight: 800, color: '#fff', marginBottom: 12 }}>제출 완료!</div>
+        <div style={{ fontSize: 28, fontWeight: 800, color: '#fff', marginBottom: 12 }}>
+          {alreadyVoted ? '이미 참여 완료!' : '제출 완료!'}
+        </div>
         <div style={{ fontSize: 16, color: 'rgba(255,255,255,.82)', lineHeight: 1.5 }}>
-          응답이 등록되었어요.<br />결과는 발표 화면에서 확인하세요.
+          {alreadyVoted ? '이미 이 투표에 참여하셨습니다.' : '응답이 등록되었어요.'}<br />
+          결과는 발표 화면에서 확인하세요.
         </div>
       </div>
-      <div style={{ padding: 24 }}>
-        <div style={{
-          background: 'rgba(255,255,255,.16)', color: '#fff',
-          textAlign: 'center', padding: 16, borderRadius: 14,
-          fontSize: 16, fontWeight: 700,
-        }}>
-          다음 질문 대기 중…
+      {!alreadyVoted && (
+        <div style={{ padding: 24 }}>
+          <div style={{
+            background: 'rgba(255,255,255,.16)', color: '#fff',
+            textAlign: 'center', padding: 16, borderRadius: 14,
+            fontSize: 16, fontWeight: 700,
+          }}>
+            다음 질문 대기 중…
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

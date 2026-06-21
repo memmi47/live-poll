@@ -1,20 +1,57 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, Suspense } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import BarResults from '../../components/BarResults';
 import BubbleResults from '../../components/BubbleResults';
 import {
   createPoll,
   fetchChoiceResponses,
   fetchClusters,
+  getPoll,
   isLive,
   subscribeClusters,
   subscribeResponses,
 } from '../../lib/api';
 
-export default function AdminPage() {
+function AdminInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pinFromUrl = searchParams.get('pin');
+
   const [poll, setPoll] = useState(null);
+  const [history, setHistory] = useState([]);
+
+  useEffect(() => {
+    try {
+      setHistory(JSON.parse(localStorage.getItem('lp_poll_history') || '[]'));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (!isLive || !pinFromUrl || poll) return;
+    getPoll(pinFromUrl)
+      .then(({ poll: p }) => setPoll(p))
+      .catch(() => {});
+  }, [pinFromUrl]);
+
+  function onPollCreated(newPoll) {
+    setPoll({ ...newPoll, participants: 0 });
+    router.push(`/admin?pin=${newPoll.pin}`, { scroll: false });
+    const newEntry = { pin: newPoll.pin, title: newPoll.title, created_at: new Date().toISOString() };
+    const updated = [newEntry, ...history.filter((h) => h.pin !== newPoll.pin)].slice(0, 5);
+    localStorage.setItem('lp_poll_history', JSON.stringify(updated));
+    setHistory(updated);
+  }
+
+  async function selectHistoryPoll(pin) {
+    try {
+      const { poll: p } = await getPoll(pin);
+      setPoll(p);
+      router.push(`/admin?pin=${pin}`, { scroll: false });
+    } catch {}
+  }
 
   return (
     <>
@@ -23,17 +60,18 @@ export default function AdminPage() {
           데모 모드 — Supabase 환경변수(NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY)를 설정하면 실제 백엔드에 연결됩니다.
         </div>
       )}
-      <div style={{ minHeight: '100vh', background: '#e7e5df', padding: 32 }}>
+      <div style={{ minHeight: '100vh', background: '#e7e5df', padding: '24px 16px' }}>
         <div style={{ maxWidth: 1180, margin: '0 auto' }}>
           <TopHeading />
+          <RecentPollsBar history={history} onSelect={selectHistoryPoll} />
           <div style={{
             background: '#fff', borderRadius: 14,
             boxShadow: '0 8px 30px rgba(15,23,42,.10)',
             overflow: 'hidden', border: '1px solid var(--lp-border)',
           }}>
             <DashboardBar poll={poll} />
-            <div style={{ display: 'flex', gap: 28, padding: 28, flexWrap: 'wrap' }}>
-              <CreatePanel poll={poll} setPoll={setPoll} />
+            <div style={{ display: 'flex', gap: 28, padding: '24px 20px', flexWrap: 'wrap' }}>
+              <CreatePanel poll={poll} onPollCreated={onPollCreated} />
               <ResultsPanel poll={poll} />
             </div>
           </div>
@@ -43,9 +81,17 @@ export default function AdminPage() {
   );
 }
 
+export default function AdminPage() {
+  return (
+    <Suspense>
+      <AdminInner />
+    </Suspense>
+  );
+}
+
 function TopHeading() {
   return (
-    <div style={{ marginBottom: 20 }}>
+    <div style={{ marginBottom: 16 }}>
       <div style={{
         fontSize: 13, letterSpacing: '.14em', fontWeight: 700,
         color: 'var(--lp-primary)', textTransform: 'uppercase', marginBottom: 6,
@@ -62,12 +108,34 @@ function TopHeading() {
   );
 }
 
+function RecentPollsBar({ history, onSelect }) {
+  if (!history.length) return null;
+  return (
+    <div style={{ marginBottom: 14, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--lp-faint)', flexShrink: 0 }}>이전 투표:</span>
+      {history.map((h) => (
+        <button
+          key={h.pin}
+          onClick={() => onSelect(h.pin)}
+          style={{
+            padding: '5px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+            background: 'rgba(255,255,255,.9)', border: '1px solid var(--lp-border)',
+            color: 'var(--lp-ink)', cursor: 'pointer',
+          }}
+        >
+          {h.title || h.pin}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function DashboardBar({ poll }) {
   const participants = poll?.participants ?? (isLive ? 0 : 74);
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '20px 28px', borderBottom: '1px solid var(--lp-surface)',
+      padding: '16px 20px', borderBottom: '1px solid var(--lp-surface)', flexWrap: 'wrap', gap: 8,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{
@@ -85,10 +153,10 @@ function DashboardBar({ poll }) {
   );
 }
 
-function CreatePanel({ poll, setPoll }) {
-  const [title, setTitle] = useState('신규 기능을 예정대로 출시할까요?');
+function CreatePanel({ poll, onPollCreated }) {
+  const [title, setTitle] = useState('');
   const [type, setType] = useState('choice');
-  const [options, setOptions] = useState(['예정대로 진행', '일정 연기']);
+  const [options, setOptions] = useState(['', '']);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -104,11 +172,11 @@ function CreatePanel({ poll, setPoll }) {
     const cleanOpts = options.map((o) => o.trim()).filter(Boolean);
     try {
       if (isLive) {
-        const { poll } = await createPoll({ title: title.trim(), question_type: type, options: showOptions ? cleanOpts : [] });
-        setPoll({ ...poll, participants: 0 });
+        const { poll: newPoll } = await createPoll({ title: title.trim(), question_type: type, options: showOptions ? cleanOpts : [] });
+        onPollCreated(newPoll);
       } else {
         await new Promise((r) => setTimeout(r, 350));
-        setPoll({ id: 'demo', pin: '482901', title: title.trim(), question_type: type, options: showOptions ? cleanOpts : [], participants: 74 });
+        onPollCreated({ id: 'demo', pin: '482901', title: title.trim() || '데모 투표', question_type: type, options: showOptions ? cleanOpts : [] });
       }
     } catch (e) {
       setError(e.message || '생성에 실패했어요');
@@ -118,12 +186,17 @@ function CreatePanel({ poll, setPoll }) {
   }
 
   return (
-    <div style={{ flex: 'none', width: 320, display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ flex: 'none', width: '100%', maxWidth: 380, display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div style={{ border: '1px solid var(--lp-border)', borderRadius: 12, padding: 20 }}>
         <SectionLabel>투표 만들기</SectionLabel>
 
         <FieldLabel>제목</FieldLabel>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle(true)} />
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="예) 다음 팀 회식 날짜는 언제가 좋을까요?"
+          style={inputStyle(false)}
+        />
 
         <FieldLabel style={{ marginTop: 16 }}>유형</FieldLabel>
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
@@ -197,7 +270,7 @@ function ResultsPanel({ poll }) {
   const showBubbles = !poll || poll.question_type === 'open' || poll.question_type === 'both';
 
   return (
-    <div style={{ flex: 1, minWidth: 420, display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 24 }}>
       {showBars && (
         <Card>
           <CardHead title="객관식 결과 · 막대그래프" meta={`총 ${total.votes}표`} />
@@ -213,7 +286,7 @@ function ResultsPanel({ poll }) {
       )}
       {poll && (
         <Link href={`/stage?pin=${poll.pin}`} className="lp-btn lp-btn--ghost" style={{ display: 'block', textDecoration: 'none', fontSize: 15, padding: 14 }}>
-          🖥️ 발표 화면(무대 모드) 열기
+          발표 화면(무대 모드) 열기
         </Link>
       )}
     </div>
@@ -233,14 +306,14 @@ function usePollResults(poll) {
     if (!isLive) {
       const opts = poll && Array.isArray(poll.options) && poll.options.length
         ? poll.options
-        : ['예정대로 진행', '일정 연기', '범위 축소', '잘 모르겠음'];
+        : ['한식', '양식', '중식', '일식'];
       setCounts(Object.fromEntries(opts.map((o, i) => [o, [34, 21, 13, 6][i] ?? 4])));
       setClusters([
-        { id: '1', label: '비용 절감', member_count: 9, summary: '운영비를 줄일 수 있다는 의견' },
-        { id: '2', label: '안정성 우려', member_count: 7, summary: '초기 안정성이 걱정된다는 의견' },
-        { id: '3', label: '속도 개선', member_count: 5, summary: '처리 속도가 빨라질 것이라는 기대' },
-        { id: '4', label: '사용성', member_count: 4, summary: '더 쓰기 쉬워졌으면 한다는 의견' },
-        { id: '5', label: '교육 필요', member_count: 3, summary: '팀 교육이 선행돼야 한다는 의견' },
+        { id: '1', label: '분위기 중시', member_count: 9, summary: '조용하고 편한 분위기를 선호한다는 의견' },
+        { id: '2', label: '가격 고려', member_count: 7, summary: '합리적인 가격대를 원한다는 의견' },
+        { id: '3', label: '거리 우선', member_count: 5, summary: '사무실에서 가까운 곳을 원한다는 의견' },
+        { id: '4', label: '건강식 선호', member_count: 4, summary: '채소 위주의 건강한 메뉴를 원한다는 의견' },
+        { id: '5', label: '빠른 서비스', member_count: 3, summary: '점심시간이 짧아 빨리 나오는 곳을 원한다는 의견' },
       ]);
       timer.current = setInterval(() => {
         setCounts((c) => {
@@ -269,6 +342,7 @@ function usePollResults(poll) {
     fetchClusters(poll.id).then(setClusters).catch(() => {});
 
     unsubR = subscribeResponses(poll.id, (row) => {
+      if (row.poll_id !== poll.id) return;
       if (row.kind === 'choice' && row.choice_value) {
         setCounts((c) => ({ ...c, [row.choice_value]: (c[row.choice_value] || 0) + 1 }));
       }
@@ -277,7 +351,21 @@ function usePollResults(poll) {
       fetchClusters(poll.id).then(setClusters).catch(() => {});
     });
 
-    return () => { unsubR(); unsubC(); };
+    // Polling fallback: re-fetch every 5s in case Realtime misses events
+    timer.current = setInterval(() => {
+      fetchChoiceResponses(poll.id)
+        .then((rows) => {
+          const tally = {};
+          for (const r of rows) {
+            if (r.choice_value) tally[r.choice_value] = (tally[r.choice_value] || 0) + 1;
+          }
+          setCounts(tally);
+        })
+        .catch(() => {});
+      fetchClusters(poll.id).then(setClusters).catch(() => {});
+    }, 5000);
+
+    return () => { unsubR(); unsubC(); clearInterval(timer.current); };
   }, [poll?.id]);
 
   const options = poll && Array.isArray(poll.options) && poll.options.length ? poll.options : Object.keys(counts);

@@ -41,8 +41,8 @@ export function getPoll(pin) {
   });
 }
 
-export function submitResponse({ poll_id, kind, choice_value, text }) {
-  return callFn('submit-response', { poll_id, kind, choice_value, text });
+export function submitResponse({ poll_id, kind, choice_value, text, voter_id }) {
+  return callFn('submit-response', { poll_id, kind, choice_value, text, voter_id });
 }
 
 export async function fetchChoiceResponses(pollId) {
@@ -70,7 +70,7 @@ export function subscribeResponses(pollId, onInsert) {
     .channel(`responses:${pollId}`)
     .on(
       'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'responses', filter: `poll_id=eq.${pollId}` },
+      { event: 'INSERT', schema: 'public', table: 'responses' },
       (payload) => onInsert(payload.new),
     )
     .subscribe();
@@ -82,8 +82,11 @@ export function subscribeClusters(pollId, onChange) {
     .channel(`clusters:${pollId}`)
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'clusters', filter: `poll_id=eq.${pollId}` },
-      () => onChange(),
+      { event: '*', schema: 'public', table: 'clusters' },
+      (payload) => {
+        const rowPollId = payload.new?.poll_id ?? payload.old?.poll_id;
+        if (!rowPollId || rowPollId === pollId) onChange();
+      },
     )
     .subscribe();
   return () => supabase.removeChannel(channel);

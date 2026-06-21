@@ -42,11 +42,12 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { poll_id, kind, choice_value, text } = body as {
+    const { poll_id, kind, choice_value, text, voter_id } = body as {
       poll_id: string;
       kind: string;
       choice_value?: string;
       text?: string;
+      voter_id?: string;
     };
 
     if (!poll_id || !kind) {
@@ -59,10 +60,13 @@ Deno.serve(async (req: Request) => {
     if (kind === 'choice') {
       const { data, error } = await supabase
         .from('responses')
-        .insert({ poll_id, kind, choice_value })
+        .insert({ poll_id, kind, choice_value, ...(voter_id ? { voter_id } : {}) })
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23505') return jsonResponse({ error: 'already_voted' }, 409);
+        throw error;
+      }
       return jsonResponse({ response: data }, 201);
     }
 
@@ -91,10 +95,13 @@ Deno.serve(async (req: Request) => {
       // 3. Persist the response (embedding stored for potential future use)
       const { data: response, error: respErr } = await supabase
         .from('responses')
-        .insert({ poll_id, kind, text, embedding: formatVector(embedding), cluster_id })
+        .insert({ poll_id, kind, text, embedding: formatVector(embedding), cluster_id, ...(voter_id ? { voter_id } : {}) })
         .select()
         .single();
-      if (respErr) throw respErr;
+      if (respErr) {
+        if (respErr.code === '23505') return jsonResponse({ error: 'already_voted' }, 409);
+        throw respErr;
+      }
 
       // 4. Slow path: trigger label generation at power-of-2 member counts
       //    (1, 2, 4, 8, 16 …). Fire-and-forget so we return immediately.

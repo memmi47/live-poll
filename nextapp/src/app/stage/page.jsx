@@ -10,8 +10,8 @@ const accentStage = '#D9924A';
 
 const DEMO = {
   pin: '482901',
-  title: '신규 기능을 예정대로 출시할까요?',
-  options: ['예정대로 진행', '일정 연기', '범위 축소', '잘 모르겠음'],
+  title: '오늘 점심 메뉴는 어디로 할까요?',
+  options: ['한식', '양식', '중식', '일식'],
   seed: [34, 21, 13, 6],
 };
 
@@ -59,6 +59,7 @@ function StageInner() {
       })
       .catch(() => {});
     const unsub = subscribeResponses(poll.id, (row) => {
+      if (row.poll_id !== poll.id) return;
       if (row.kind === 'choice' && row.choice_value) {
         setCounts((c) => ({ ...c, [row.choice_value]: (c[row.choice_value] || 0) + 1 }));
       }
