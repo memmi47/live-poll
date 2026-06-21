@@ -305,17 +305,30 @@ function CreatePanel({ poll, onPollCreated }) {
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--lp-faint)', letterSpacing: '.06em' }}>
             투표 만들기
           </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {questions.length > 1 && (
-              <>
-                <ArrowBtn disabled={editQIdx === 0} onClick={() => setEditQIdx((i) => i - 1)}>‹</ArrowBtn>
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--lp-faint)', minWidth: 40, textAlign: 'center' }}>
-                  {editQIdx + 1} / {questions.length}
-                </span>
-                <ArrowBtn disabled={editQIdx === questions.length - 1} onClick={() => setEditQIdx((i) => i + 1)}>›</ArrowBtn>
-              </>
-            )}
-          </div>
+          {questions.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <ArrowBtn disabled={editQIdx === 0} onClick={() => setEditQIdx((i) => i - 1)}>‹</ArrowBtn>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                {questions.map((q, i) => {
+                  const empty = !q.title.trim();
+                  const active = i === editQIdx;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => setEditQIdx(i)}
+                      title={empty ? `질문 ${i + 1}: 제목 없음` : `질문 ${i + 1}`}
+                      style={{
+                        width: active ? 22 : 14, height: 14, borderRadius: 7,
+                        background: empty ? '#fca5a5' : active ? 'var(--lp-primary)' : 'var(--lp-border)',
+                        border: 'none', cursor: 'pointer', padding: 0, transition: 'width .15s',
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              <ArrowBtn disabled={editQIdx === questions.length - 1} onClick={() => setEditQIdx((i) => i + 1)}>›</ArrowBtn>
+            </div>
+          )}
         </div>
 
         <FieldLabel>제목</FieldLabel>
