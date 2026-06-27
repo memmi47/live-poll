@@ -566,7 +566,7 @@ function ResultsPanel({ poll }) {
         </Card>
       )}
       {poll && (
-        <Link href={`/stage?pin=${poll.pin}`} className="lp-btn lp-btn--ghost" style={{ display: 'block', textDecoration: 'none', fontSize: 15, padding: 14 }}>
+        <Link href={`/stage?pin=${poll.pin}&q=${viewQIdx}`} className="lp-btn lp-btn--ghost" style={{ display: 'block', textDecoration: 'none', fontSize: 15, padding: 14 }}>
           발표 화면(무대 모드) 열기
         </Link>
       )}

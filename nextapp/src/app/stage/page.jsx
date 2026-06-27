@@ -45,12 +45,13 @@ function ArrowBtn({ dir, onClick, disabled }) {
 function StageInner() {
   const params = useSearchParams();
   const pin = params.get('pin');
+  const qIdx = parseInt(params.get('q') || '0', 10);
 
   const [poll, setPoll] = useState(isLive ? null : DEMO);
   const [counts, setCounts] = useState({});
   const [clusters, setClusters] = useState([]);
   const [participants, setParticipants] = useState(isLive ? 0 : 74);
-  const [stageQIdx, setStageQIdx] = useState(0);
+  const [stageQIdx, setStageQIdx] = useState(qIdx);
   const [viewMode, setViewMode] = useState('choice');
   const [mounted, setMounted] = useState(false);
   const demoTimer = useRef(null);
@@ -66,6 +67,11 @@ function StageInner() {
   const currentQ = questions[stageQIdx] || {};
   const showChoice = currentQ.question_type === 'choice' || currentQ.question_type === 'both';
   const showOpen = currentQ.question_type === 'open' || currentQ.question_type === 'both';
+
+  // Sync stageQIdx when query param 'q' changes
+  useEffect(() => {
+    setStageQIdx(qIdx);
+  }, [qIdx]);
 
   // Reset viewMode when switching questions
   useEffect(() => {
@@ -125,6 +131,7 @@ function StageInner() {
       fetchClusters(poll.id, stageQIdx).then(setClusters).catch(() => {});
     }
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     function loadParticipants() {
       supabase
         .from('responses')
