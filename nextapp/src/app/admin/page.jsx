@@ -490,13 +490,23 @@ function JoinPanel({ poll }) {
   const pin = poll?.pin ?? '';
   const formatted = pin.length === 6 ? `${pin.slice(0, 3)} ${pin.slice(3)}` : '— — —';
   const [origin, setOrigin] = useState('');
+  const [copied, setCopied] = useState(false);
   useEffect(() => { setOrigin(window.location.origin); }, []);
   const joinUrl = origin && pin ? `${origin}/join?pin=${pin}` : '';
+  const qrUrl = origin && pin ? `${origin}/qr?pin=${pin}` : '';
+
+  function copyLink() {
+    if (!joinUrl) return;
+    navigator.clipboard.writeText(joinUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   return (
     <div style={{ border: '1px solid var(--lp-border)', borderRadius: 12, padding: 20, background: 'var(--lp-bg)' }}>
       <SectionLabel>참여 안내</SectionLabel>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 14 }}>
         <div style={{
           flex: 'none', width: 96, height: 96, borderRadius: 12, background: '#fff',
           border: '1px solid var(--lp-border)', display: 'flex', alignItems: 'center',
@@ -512,9 +522,38 @@ function JoinPanel({ poll }) {
           <div style={{ fontSize: 12, color: 'var(--lp-muted)', fontWeight: 600, marginBottom: 4 }}>PIN 코드</div>
           <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '.12em', color: 'var(--lp-primary)' }}>{formatted}</div>
           <div style={{ fontSize: 12, color: 'var(--lp-faint)', marginTop: 4 }}>
-            {joinUrl ? <a href={joinUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>{origin}/join</a> : '투표를 생성하면 QR코드가 나타납니다'}
+            {joinUrl
+              ? <a href={joinUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>{origin}/join</a>
+              : '투표를 생성하면 QR코드가 나타납니다'}
           </div>
         </div>
+      </div>
+
+      {/* Action buttons */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          onClick={copyLink}
+          disabled={!joinUrl}
+          style={{
+            flex: 1, padding: '9px 12px', borderRadius: 9, fontSize: 13, fontWeight: 700,
+            border: '1.5px solid var(--lp-border)', background: copied ? '#dcfce7' : '#fff',
+            color: copied ? '#16a34a' : 'var(--lp-ink)', cursor: joinUrl ? 'pointer' : 'default',
+            transition: 'background .2s, color .2s',
+          }}
+        >
+          {copied ? '✓ 복사됨' : '🔗 링크 복사'}
+        </button>
+        <button
+          onClick={() => qrUrl && window.open(qrUrl, '_blank', 'width=600,height=700')}
+          disabled={!qrUrl}
+          style={{
+            flex: 1, padding: '9px 12px', borderRadius: 9, fontSize: 13, fontWeight: 700,
+            border: '1.5px solid var(--lp-border)', background: '#fff',
+            color: 'var(--lp-ink)', cursor: qrUrl ? 'pointer' : 'default',
+          }}
+        >
+          QR 전체화면
+        </button>
       </div>
     </div>
   );
