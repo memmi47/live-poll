@@ -8,6 +8,7 @@ import {
   subscribeResponses, subscribeClusters, supabase,
 } from '../../lib/api';
 import BubbleResults from '../../components/BubbleResults';
+import { QRCodeSVG } from 'qrcode.react';
 
 const navyScaleStage = ['#7E9BCB', '#5E7CAE', '#46618F', '#3A527A'];
 const accentStage = '#D9924A';
@@ -54,7 +55,10 @@ function StageInner() {
   const [stageQIdx, setStageQIdx] = useState(qIdx);
   const [viewMode, setViewMode] = useState('choice');
   const [mounted, setMounted] = useState(false);
+  const [origin, setOrigin] = useState('');
   const demoTimer = useRef(null);
+
+  useEffect(() => { setOrigin(window.location.origin); }, []);
 
   // Normalize to questions array
   const questions =
@@ -228,10 +232,16 @@ function StageInner() {
                 </div>
               </div>
               <div style={{
-                width: 72, height: 72, borderRadius: 12, background: '#1E293B',
+                width: 72, height: 72, borderRadius: 12, background: '#fff',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#475569', fontSize: 11,
-              }}>QR</div>
+                padding: 4,
+              }}>
+                {origin && poll?.pin ? (
+                  <QRCodeSVG value={`${origin}/join?pin=${poll.pin}`} size={64} />
+                ) : (
+                  <span style={{ color: '#94A3B8', fontSize: 10, textAlign: 'center', lineHeight: 1.3 }}>QR</span>
+                )}
+              </div>
             </div>
           </div>
 
