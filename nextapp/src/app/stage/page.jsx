@@ -73,10 +73,15 @@ function StageInner() {
     setStageQIdx(qIdx);
   }, [qIdx]);
 
-  // Reset viewMode when switching questions
+  // For "both" type, user can toggle between choice/open.
+  // For single-type questions, always show the correct view regardless of viewMode state.
+  // This avoids a race condition where viewMode is set before poll loads.
+  const effectiveViewMode = showChoice && showOpen ? viewMode : showChoice ? 'choice' : 'open';
+
+  // Reset toggle when switching questions or when poll first loads
   useEffect(() => {
-    setViewMode(showChoice ? 'choice' : 'open');
-  }, [stageQIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+    setViewMode('choice');
+  }, [stageQIdx, poll?.id]);
 
   // Load poll from PIN
   useEffect(() => {
@@ -262,8 +267,8 @@ function StageInner() {
                   style={{
                     padding: '8px 20px', borderRadius: 999, fontSize: 14, fontWeight: 700,
                     border: 'none', cursor: 'pointer',
-                    background: viewMode === mode ? accentStage : 'rgba(255,255,255,.1)',
-                    color: viewMode === mode ? '#fff' : '#94A3B8',
+                    background: effectiveViewMode === mode ? accentStage : 'rgba(255,255,255,.1)',
+                    color: effectiveViewMode === mode ? '#fff' : '#94A3B8',
                   }}
                 >
                   {label}
@@ -273,7 +278,7 @@ function StageInner() {
           )}
 
           {/* Choice bar results */}
-          {showChoice && viewMode === 'choice' && (
+          {showChoice && effectiveViewMode === 'choice' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
               {options.map((opt, i) => {
                 const r = rankOf[i];
@@ -314,7 +319,7 @@ function StageInner() {
           )}
 
           {/* Bubble results for open-text */}
-          {showOpen && viewMode === 'open' && (
+          {showOpen && effectiveViewMode === 'open' && (
             <BubbleResults data={clusters} stage={true} />
           )}
         </div>
