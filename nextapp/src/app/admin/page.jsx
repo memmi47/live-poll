@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState, Suspense } from 'react';
 import Link from 'next/link';
+import { QRCodeSVG } from 'qrcode.react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import BarResults from '../../components/BarResults';
 import BubbleResults from '../../components/BubbleResults';
@@ -486,8 +487,12 @@ function CreatePanel({ poll, onPollCreated }) {
 }
 
 function JoinPanel({ poll }) {
-  const pin = poll?.pin ?? '— — —';
-  const formatted = pin.length === 6 ? `${pin.slice(0, 3)} ${pin.slice(3)}` : pin;
+  const pin = poll?.pin ?? '';
+  const formatted = pin.length === 6 ? `${pin.slice(0, 3)} ${pin.slice(3)}` : '— — —';
+  const [origin, setOrigin] = useState('');
+  useEffect(() => { setOrigin(window.location.origin); }, []);
+  const joinUrl = origin && pin ? `${origin}/join?pin=${pin}` : '';
+
   return (
     <div style={{ border: '1px solid var(--lp-border)', borderRadius: 12, padding: 20, background: 'var(--lp-bg)' }}>
       <SectionLabel>참여 안내</SectionLabel>
@@ -495,12 +500,20 @@ function JoinPanel({ poll }) {
         <div style={{
           flex: 'none', width: 96, height: 96, borderRadius: 12, background: '#fff',
           border: '1px solid var(--lp-border)', display: 'flex', alignItems: 'center',
-          justifyContent: 'center', color: '#cbd5e1', fontSize: 11, textAlign: 'center', lineHeight: 1.4,
-        }}>QR<br />자리</div>
+          justifyContent: 'center', padding: 6,
+        }}>
+          {joinUrl ? (
+            <QRCodeSVG value={joinUrl} size={84} />
+          ) : (
+            <span style={{ color: '#cbd5e1', fontSize: 11, textAlign: 'center', lineHeight: 1.4 }}>투표 생성 후<br />표시됩니다</span>
+          )}
+        </div>
         <div>
           <div style={{ fontSize: 12, color: 'var(--lp-muted)', fontWeight: 600, marginBottom: 4 }}>PIN 코드</div>
           <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: '.12em', color: 'var(--lp-primary)' }}>{formatted}</div>
-          <div style={{ fontSize: 12, color: 'var(--lp-faint)', marginTop: 4 }}>livepoll.app 에서 입력</div>
+          <div style={{ fontSize: 12, color: 'var(--lp-faint)', marginTop: 4 }}>
+            {joinUrl ? <a href={joinUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>{origin}/join</a> : '투표를 생성하면 QR코드가 나타납니다'}
+          </div>
         </div>
       </div>
     </div>

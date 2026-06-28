@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { getPoll, isLive, submitResponse } from '../../lib/api';
 
 const PIN_LEN = 6;
@@ -43,21 +44,32 @@ function hasVotedForPoll(pollId) {
   }
 }
 
-export default function JoinPage() {
+function JoinInner() {
+  const searchParams = useSearchParams();
+  const pinFromUrl = (searchParams.get('pin') || '').replace(/\D/g, '').slice(0, PIN_LEN);
+
   const [stage, setStage] = useState('pin');
-  const [pin, setPin] = useState('');
+  const [pin, setPin] = useState(pinFromUrl);
   const [poll, setPoll] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [alreadyVoted, setAlreadyVoted] = useState(false);
 
-  async function enter() {
-    if (pin.length !== PIN_LEN) return;
+  // Auto-submit when a valid PIN arrives from URL
+  useEffect(() => {
+    if (pinFromUrl.length === PIN_LEN) {
+      enter(pinFromUrl);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function enter(overridePin) {
+    const activePin = overridePin ?? pin;
+    if (activePin.length !== PIN_LEN) return;
     setBusy(true);
     setError('');
     try {
       if (isLive) {
-        const { poll: p } = await getPoll(pin);
+        const { poll: p } = await getPoll(activePin);
         setPoll(p);
         if (hasVotedForPoll(p.id)) {
           setAlreadyVoted(true);
@@ -85,7 +97,7 @@ export default function JoinPage() {
       )}
       <Phone pin={poll?.pin ? `PIN ${poll.pin.slice(0, 3)}·` : 'LivePoll'}>
         {stage === 'pin' && (
-          <PinStep pin={pin} setPin={setPin} onEnter={enter} busy={busy} error={error} />
+          <PinStep pin={pin} setPin={setPin} onEnter={() => enter()} busy={busy} error={error} />
         )}
         {stage === 'question' && (
           <QuestionStep
@@ -99,6 +111,14 @@ export default function JoinPage() {
         {stage === 'done' && <DoneStep alreadyVoted={alreadyVoted} />}
       </Phone>
     </>
+  );
+}
+
+export default function JoinPage() {
+  return (
+    <Suspense>
+      <JoinInner />
+    </Suspense>
   );
 }
 
